@@ -97,7 +97,7 @@
 
 <div class="panel" id="menuPanel">
   <h1><span class="r">ドン</span><span class="g">ドコ</span><span class="b">太鼓</span></h1>
-  <p>流れてくる音符が判定リングに重なったら、太鼓を叩こう。<br>曲は「祭りの夜のドンドコ節」（オリジナル生成曲・約90秒）</p>
+  <p>音符が<strong>右から左へ</strong>流れてくるよ。レーン左の判定サークルに重なった瞬間に、太鼓を叩こう。<br>曲は「祭りの夜のドンドコ節」（オリジナル生成曲・約90秒）</p>
   <div class="howto">
     <div><b><span class="dot" style="background:var(--don)"></span>ドン</b>太鼓の<strong>中央</strong>を叩く。キーは <kbd>D</kbd> <kbd>F</kbd></div>
     <div><b><span class="dot" style="background:var(--katsu)"></span>カツ</b>太鼓の<strong>縁</strong>を叩く。キーは <kbd>J</kbd> <kbd>K</kbd></div>
@@ -316,7 +316,11 @@ function onHit(hitType, hand){
 let renderer, scene, camera, drumGroup, drumFaceMat, noteGroup, boardMesh, boardCtx, boardTex;
 let judgeText = '', judgeColor = '#fff', judgeUntil = 0;
 const DRUM_POS = new THREE.Vector3(0, 0.92, -0.62), DRUM_R = 0.34;
-const LANE_Y = DRUM_POS.y + 0.55; // 音符レーンの高さ：太鼓の上に浮かせ、近づく音符が太鼓に隠れないようにする
+/* 横レーン（本家式）：正面に横一列のレーンを置き、音符が右から左へ流れる。
+   判定サークルはレーン左側（太鼓寄り）。レーンは太鼓より奥・上で、太鼓にもボードにも隠れない。 */
+const LANE_Y = 1.52, LANE_Z = -1.7;
+const JUDGE_X = -1.0;  // 判定サークルのX（レーン左側）
+const SPAWN_X = 1.9;   // 音符の出現X（レーン右端）
 let noteMeshes = [];
 const controllers = [];
 function makeDrum(){
@@ -341,10 +345,27 @@ function makeDrum(){
     leg.position.set(p[0], -0.5, p[1]); drumGroup.add(leg);
   });
   scene.add(drumGroup);
-  // 判定リング
-  const judge = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.008, 8, 40),
+}
+/* 横レーン本体：帯＋上下の金枠＋左端の判定サークル */
+function makeLane(){
+  const grp = new THREE.Group();
+  const x0 = JUDGE_X - 0.30, x1 = SPAWN_X + 0.28, len = x1 - x0, cx = (x0 + x1) / 2;
+  const bar = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.38),
+    new THREE.MeshBasicMaterial({ color: 0x20140d, side: THREE.DoubleSide }));
+  bar.position.set(cx, LANE_Y, LANE_Z - 0.012); grp.add(bar);
+  const frameMat = new THREE.MeshBasicMaterial({ color: 0xf2b63d });
+  const top = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, 0.012), frameMat);
+  top.position.set(cx, LANE_Y + 0.20, LANE_Z - 0.012); grp.add(top);
+  const bot = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, 0.012), frameMat);
+  bot.position.set(cx, LANE_Y - 0.20, LANE_Z - 0.012); grp.add(bot);
+  // 判定サークル（二重リング）
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.011, 8, 44),
     new THREE.MeshBasicMaterial({ color: 0xf2b63d }));
-  judge.position.set(DRUM_POS.x, LANE_Y, DRUM_POS.z + 0.22); scene.add(judge);
+  ring.position.set(JUDGE_X, LANE_Y, LANE_Z + 0.004); grp.add(ring);
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(0.108, 0.005, 8, 36),
+    new THREE.MeshBasicMaterial({ color: 0xf7ead8 }));
+  inner.position.set(JUDGE_X, LANE_Y, LANE_Z + 0.004); grp.add(inner);
+  scene.add(grp);
 }
 function flashDrum(type){
   if (!drumFaceMat) return;
@@ -385,7 +406,7 @@ function makeBoard(){
   boardTex = new THREE.CanvasTexture(cv);
   boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.94),
     new THREE.MeshBasicMaterial({ map: boardTex, transparent: true }));
-  boardMesh.position.set(0, 2.16, -2.2); scene.add(boardMesh); drawBoard();
+  boardMesh.position.set(0.3, 2.34, -2.4); scene.add(boardMesh); drawBoard();
 }
 function drawBoard(){
   if (!boardCtx) return; const c = boardCtx, W = 1024, H = 640;
@@ -400,6 +421,8 @@ function drawBoard(){
     c.fillText('中央を叩く ＝ ドン（赤）', W/2, 300);
     c.fillText('縁を叩く ＝ カツ（青）', W/2, 360);
     c.fillText('大きな音符は両手同時！', W/2, 420);
+    c.fillStyle = '#c9b299'; c.font = '600 34px sans-serif';
+    c.fillText('音符は右から左へ流れてくるよ', W/2, 478);
     c.fillStyle = '#e8402a'; c.font = '900 54px sans-serif';
     c.fillText('太鼓を叩くとスタート', W/2, 540);
   } else if (state === 'playing'){
@@ -437,7 +460,8 @@ function initThree(){
   scene = new THREE.Scene(); scene.background = new THREE.Color(0x1a1210);
   scene.fog = new THREE.Fog(0x1a1210, 6, 14);
   camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.05, 60);
-  camera.position.set(0, 1.35, 0.35);
+  camera.position.set(0.45, 1.45, 0.9);
+  fitCamera();
   scene.add(new THREE.AmbientLight(0xffe0b8, 1.1));
   const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(1.5, 3, 2); scene.add(key);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(5, 40),
@@ -449,7 +473,7 @@ function initThree(){
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), lampMat);
     lamp.position.set(p[0], p[1], p[2]); lamp.scale.y = 0.82; scene.add(lamp);
   });
-  makeDrum(); makeBoard();
+  makeDrum(); makeLane(); makeBoard();
   // コントローラー＝バチ
   for (let i = 0; i < 2; i++){
     const grip = renderer.xr.getControllerGrip(i);
@@ -467,10 +491,19 @@ function initThree(){
     controllers.push({ grip, grp, tip, prev: new THREE.Vector3(), prevInit: false, hand: i === 0 ? 'left' : 'right', cool: 0 });
   }
   addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    fitCamera();
     renderer.setSize(innerWidth, innerHeight);
   });
   renderer.setAnimationLoop(tick);
+}
+/* 画面モードの画角：横レーン全体（判定サークル〜出現位置）が入り切るよう、
+   縦長画面ではFOVを広げて水平画角を確保する */
+function fitCamera(){
+  if (!camera) return;
+  const a = innerWidth / innerHeight;
+  camera.aspect = a;
+  camera.fov = a >= 1 ? 66 : Math.min(110, 2 * Math.atan(0.65 / a) * 180 / Math.PI);
+  camera.updateProjectionMatrix();
 }
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
 function checkControllerHits(dt){
@@ -512,14 +545,20 @@ function tick(){
       if (diff < -WIN_OK){ applyJudge(n, 'bad'); n.mesh.visible = false; continue; }
       if (diff > TRAVEL){ n.mesh.visible = false; continue; }
       n.mesh.visible = true;
-      const z = DRUM_POS.z + 0.22 - (diff / TRAVEL) * 4.6;
-      n.mesh.position.set(DRUM_POS.x, LANE_Y, z);
-      const s = 0.75 + 0.25 * (1 - Math.max(0, diff) / TRAVEL); n.mesh.scale.setScalar(s);
+      // 横レーン：右端（SPAWN_X）から左の判定サークル（JUDGE_X）へ等速で流れる
+      const x = JUDGE_X + (diff / TRAVEL) * (SPAWN_X - JUDGE_X);
+      n.mesh.position.set(x, LANE_Y, LANE_Z);
+      n.mesh.scale.setScalar(1);
     }
     if (((now / 200) | 0) !== ((now - dt * 1000) / 200 | 0)) drawBoard();
     if (songTime >= SONG_LEN + 0.5) endGame();
   }
   checkControllerHits(dt);
+  if (!renderer.xr.isPresenting){
+    // 画面モード：レーン中央を正面に捉える固定カメラ（VR中はヘッドセットがカメラを担う）
+    camera.position.set(0.45, 1.45, 0.9);
+    camera.lookAt(0.45, 1.38, LANE_Z);
+  }
   renderer.render(scene, camera);
 }
 
